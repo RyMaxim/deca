@@ -10,7 +10,7 @@ def open_file(filename: Path):
  f_bytes = bytearray(filename.read_bytes())
  return (data.root_node, f_bytes)
 
-DECA_PATH = "D:\\deca_gui-b595\\work\\hp"
+DECA_PATH = "C:\\Users\\Ryan\\Tools\\deca_gui-b595\\work\\hp"
 PROJ = DECA_PATH + "\\project.json"
 FILE = "extracted\\settings\\hp_settings\\animal_interest.bin"
 
@@ -20,8 +20,12 @@ fnm = FieldNameMap(vfs)
 root, data = open_file(Path(DECA_PATH + "\\" + FILE))
 
 hashes = {}
+print("Extracting name hashes...")
 for node in root.child_table:
     hashes[node.name_hash] = fnm.lookup(hash32=node.name_hash)
+print(f"Successfully extracted {len(hashes)} hashes.")
 
+print("Writing JSON file...")
 with open('animal_interest.json', 'w') as f:
     json.dump({"equipment_name_hash": hashes}, f, indent=4)
+print("Successfully wrote to 'animal_interest.jaon'")
