@@ -3,9 +3,11 @@ import sys
 import os
 from typing import Optional, List
 from deca.errors import *
-from deca.db_processor import VfsProcessor, vfs_structure_new, vfs_structure_open, vfs_structure_empty, VfsNode
+from deca.db_core import VfsNode
+from deca.db_processor import VfsProcessor, vfs_structure_new, vfs_structure_open, vfs_structure_empty
 from deca.db_view import VfsView
 from deca.builder import Builder
+from deca.path import UniPath
 from deca.util import Logger, to_unicode, deca_root
 from deca.cmds.tool_make_web_map import ToolMakeWebMap
 from deca.export_import import \
@@ -14,9 +16,9 @@ from .main_window import Ui_MainWindow
 from .deca_interfaces import IVfsViewSrc
 from .vfsdirwidget import VfsDirWidget
 from .vfsnodetablewidget import VfsNodeTableWidget
-from PySide2.QtCore import Slot, QUrl, Signal, QEvent
-from PySide2.QtWidgets import QApplication, QMainWindow, QMessageBox, QFileDialog, QStyle
-from PySide2.QtGui import QDesktopServices, QKeyEvent
+from PySide6.QtCore import Slot, QUrl, Signal, QEvent
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabBar, QMessageBox, QFileDialog, QStyle
+from PySide6.QtGui import QDesktopServices, QKeyEvent
 
 window_title = 'decaGUI: v0.2.19rc'
 
@@ -26,10 +28,10 @@ class MainWindowDataSource(IVfsViewSrc):
         super().__init__(*args, **kwargs)
         self.main_window: MainWindow = main_window
 
-    def vfs_get(self):
-        return self.main_window.vfs
+    def vfs_get(self) -> Optional[VfsProcessor]:
+        return self.main_window.vfs_view_current().vfs()
 
-    def vfs_view_get(self):
+    def vfs_view_get(self) -> Optional[VfsView]:
         return self.main_window.vfs_view_current()
 
     def archive_open(self, selection):
@@ -70,6 +72,7 @@ class MainWindow(QMainWindow):
         # self.ui.action_external_manage.triggered.connect(self.external_manage)
         self.ui.action_exit.triggered.connect(self.exit_app)
         self.ui.action_make_web_map.triggered.connect(self.tool_make_web_map)
+        self.ui.action_make_web_map.setEnabled(False)
 
         # filter
         self.ui.filter_edit.textChanged.connect(self.filter_text_changed)
@@ -97,26 +100,28 @@ class MainWindow(QMainWindow):
         self.ui.bt_extract.clicked.connect(self.slot_extract_clicked)
 
         self.ui.bt_extract_folder_show.setEnabled(False)
-        self.ui.bt_extract_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirIcon))
+        self.ui.bt_extract_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirLinkIcon))
         self.ui.bt_extract_folder_show.clicked.connect(self.slot_folder_show_clicked)
 
         self.ui.bt_extract_gltf_3d.setEnabled(False)
         self.ui.bt_extract_gltf_3d.clicked.connect(self.slot_extract_gltf_clicked)
 
         self.ui.bt_extract_gltf_3d_folder_show.setEnabled(False)
-        self.ui.bt_extract_gltf_3d_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirIcon))
+        self.ui.bt_extract_gltf_3d_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirLinkIcon))
         self.ui.bt_extract_gltf_3d_folder_show.clicked.connect(self.slot_folder_show_clicked)
 
         self.ui.bt_mod_prep.setEnabled(False)
         self.ui.bt_mod_prep.clicked.connect(self.slot_mod_prep_clicked)
 
         self.ui.bt_mod_folder_show.setEnabled(False)
-        self.ui.bt_mod_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirIcon))
+        self.ui.bt_mod_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirLinkIcon))
         self.ui.bt_mod_folder_show.clicked.connect(self.slot_folder_show_clicked)
 
-        self.ui.bt_mod_build_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirIcon))
+        self.ui.bt_mod_build_folder_show.setEnabled(False)
+        self.ui.bt_mod_build_folder_show.setIcon(self.style().standardIcon(QStyle.SP_DirLinkIcon))
         self.ui.bt_mod_build_folder_show.clicked.connect(self.slot_folder_show_clicked)
 
+        self.ui.bt_mod_build.setEnabled(False)
         self.ui.bt_mod_build.clicked.connect(self.slot_mod_build_clicked)
 
         self.ui.tabs_nodes.tabCloseRequested.connect(self.slot_nodes_tab_close)
@@ -124,7 +129,7 @@ class MainWindow(QMainWindow):
 
         self.ui.data_view.data_source_set(self.data_source)
 
-        self.ui.filter_edit.setText('.*')
+        self.update_ui_state()
 
     def eventFilter(self, source, event):
         if event.type() == QEvent.KeyRelease and source is self.ui.filter_edit:
@@ -178,12 +183,11 @@ class MainWindow(QMainWindow):
         widget = self.tab_nodes_add(VfsNodeTableWidget, self.vfs_view_root, 'Raw List')
         widget.show_all_set(True)
 
-        self.ui.action_external_add.setEnabled(True)
+        self.update_ui_state()
 
-        self.setWindowTitle("{}: Archive: {}".format(window_title, vfs.game_info.game_dir))
         self.ui.statusbar.showMessage("LOAD COMPLETE")
 
-    def vfs_view_current(self):
+    def vfs_view_current(self) -> Optional[VfsView]:
         widget = self.ui.tabs_nodes.currentWidget()
         if widget is None:
             return None
@@ -195,17 +199,20 @@ class MainWindow(QMainWindow):
         # self.gridLayout = QtWidgets.QGridLayout(self.tab_extract)
         # self.gridLayout.setObjectName("gridLayout")
         widget = widget_class(vfs_view, self.ui.tabs_nodes)
-        self.ui.tabs_nodes.addTab(widget, name)
+        tabIndex = self.ui.tabs_nodes.addTab(widget, name)
         widget.vnode_2click_selected = self.vnode_2click_selected
 
         if deletable:
             self.tab_nodes_deletable.add(widget)
+        else:
+            self.ui.tabs_nodes.tabBar().setTabButton(tabIndex, QTabBar.RightSide, None)
 
         return widget
 
     def slot_archive_open(self, vnode: VfsNode):
-        vfs_view = self.vfs_view_create(self.vfs_view_current(), parent_id=vnode.uid)
-        self.tab_nodes_add(VfsDirWidget, vfs_view, to_unicode(vnode.v_path), True)
+        if vnode is not None:
+            vfs_view = self.vfs_view_create(self.vfs_view_current(), parent_id=vnode.uid)
+            self.tab_nodes_add(VfsDirWidget, vfs_view, to_unicode(vnode.v_path), True)
 
     def slot_nodes_tab_close(self, index):
         widget = self.ui.tabs_nodes.widget(index)
@@ -217,6 +224,7 @@ class MainWindow(QMainWindow):
 
     def slot_nodes_tab_current_changed(self, index):
         widget = self.ui.tabs_nodes.widget(index)
+        self.setWindowTitle("{}: Archive: {}".format(window_title, self.vfs_view_current().vfs().game_info.game_dir))
         self.update_select_state(self.vfs_view_current())
 
     def slot_visible_changed(self, vfs_view: VfsView):
@@ -225,9 +233,22 @@ class MainWindow(QMainWindow):
     def slot_selection_changed(self, vfs_view: VfsView):
         self.update_select_state(vfs_view)
 
+    def update_ui_state(self):
+        if self.vfs_view_current() is None:
+            self.ui.bt_mod_build_folder_show.setEnabled(False)
+            self.ui.bt_mod_build.setEnabled(False)
+            self.ui.action_external_add.setEnabled(False)
+            self.ui.action_make_web_map.setEnabled(False)
+        else:
+            self.ui.bt_mod_build_folder_show.setEnabled(True)
+            self.ui.bt_mod_build.setEnabled(True)
+            self.ui.action_external_add.setEnabled(True)
+            self.ui.action_make_web_map.setEnabled(True)
+        self.filter_text_changed()
+
     def update_select_state(self, vfs_view):
         if vfs_view == self.vfs_view_current():
-            any_selected = vfs_view.paths_count() > 0
+            any_selected = vfs_view.capture_count() > 0
 
             if not self.ui.filter_edit.hasFocus():
                 self.ui.filter_edit.setText(to_unicode(vfs_view.mask))
@@ -239,7 +260,7 @@ class MainWindow(QMainWindow):
             self.ui.bt_extract_gltf_3d_folder_show.setEnabled(any_selected)
             self.ui.bt_mod_folder_show.setEnabled(any_selected)
 
-            str_vpaths = self.vfs_view_current().paths_summary_str()
+            str_vpaths = self.vfs_view_current().capture_path_summary_str()
             self.ui.bt_extract.setText('EXTRACT: {}'.format(str_vpaths))
             self.ui.bt_extract_gltf_3d.setText('EXTRACT 3D/GLTF2: {}'.format(str_vpaths))
             self.ui.bt_mod_prep.setText('PREP MOD: {}'.format(str_vpaths))
@@ -257,19 +278,19 @@ class MainWindow(QMainWindow):
     def extract(
             self, eid, extract_dir, export_raw, export_contents, save_to_processed, save_to_text,
             export_map_full, export_map_tiles):
-        if self.vfs_view_current().node_selected_count() > 0:
+        if self.vfs_view_current() and self.vfs_view_current().node_selected_count() > 0:
             try:
                 if export_raw:
-                    nodes_export_raw(self.vfs, self.vfs_view_current(), extract_dir)
+                    nodes_export_raw(self.vfs_view_current().vfs(), self.vfs_view_current(), extract_dir)
 
                 if export_contents:
-                    nodes_export_contents(self.vfs, self.vfs_view_current(), extract_dir)
+                    nodes_export_contents(self.vfs_view_current().vfs(), self.vfs_view_current(), extract_dir)
 
                 if export_map_full or export_map_tiles:
-                    nodes_export_map(self.vfs, self.vfs_view_current(), extract_dir, export_map_full, export_map_tiles)
+                    nodes_export_map(self.vfs_view_current().vfs(), self.vfs_view_current(), extract_dir, export_map_full, export_map_tiles)
 
                 nodes_export_processed(
-                    self.vfs, self.vfs_view_current(), extract_dir,
+                    self.vfs_view_current().vfs(), self.vfs_view_current(), extract_dir,
                     allow_overwrite=False,
                     save_to_processed=save_to_processed,
                     save_to_text=save_to_text)
@@ -278,83 +299,90 @@ class MainWindow(QMainWindow):
                 self.error_dialog('{} Canceled: File Exists: {}'.format(eid, exce.args))
 
     def extract_gltf(self, eid, extract_dir, save_to_one_dir, include_skeleton, texture_format):
-        if self.vfs_view_current().node_selected_count() > 0:
+        if self.vfs_view_current() and self.vfs_view_current().node_selected_count() > 0:
             try:
                 nodes_export_gltf(
-                    self.vfs, self.vfs_view_current(), extract_dir,
+                    self.vfs_view_current().vfs(), self.vfs_view_current(), extract_dir,
                     allow_overwrite=False,
                     save_to_one_dir=save_to_one_dir,
                     include_skeleton=include_skeleton,
-                    texture_format=texture_format,
-                )
+                    texture_format=texture_format)
 
             except EDecaFileExists as exce:
                 self.error_dialog('{} Canceled: File Exists: {}'.format(eid, exce.args))
 
     def slot_folder_show_clicked(self, checked):
-        if self.vfs_view_current().node_selected_count() > 0:
-            path = self.vfs_view_current().common_prefix()
+        if self.vfs_view_current() is not None:
+
+            root = None
+            path_required = False
 
             if self.sender() == self.ui.bt_extract_folder_show:
-                root = os.path.join(self.vfs.working_dir, 'extracted')
+                root = UniPath.join(self.vfs_view_current().vfs().working_dir, 'extracted')
+                path_required = True
             elif self.sender() == self.ui.bt_extract_gltf_3d_folder_show:
-                root = os.path.join(self.vfs.working_dir, 'gltf2_3d')
+                root = UniPath.join(self.vfs_view_current().vfs().working_dir, 'gltf2_3d')
+                path_required = True
             elif self.sender() == self.ui.bt_mod_folder_show:
-                root = os.path.join(self.vfs.working_dir, 'mod')
+                root = UniPath.join(self.vfs_view_current().vfs().working_dir, 'mod')
+                path_required = True
             elif self.sender() == self.ui.bt_mod_build_folder_show:
-                root = os.path.join(self.vfs.working_dir, 'build')
-                path = None
-            else:
-                root = None
+                root = UniPath.join(self.vfs_view_current().vfs().working_dir, 'build')
+                path_required = False
 
             if root:
-                if path:
-                    path = os.path.join(root, path)
+                if path_required and (self.vfs_view_current().capture_count() > 0):
+                    path = self.vfs_view_current().capture_path_common_prefix()
+                    path = UniPath.join(root, path)
+                    if not UniPath.isdir(path):
+                        path = UniPath.dirname(path)
                 else:
                     path = root
 
-                path = path.replace('\\', '/')
+                #self.logger.log(f'View folder: {path}')
 
-                if not os.path.isdir(path):
-                    path, _ = os.path.split(path)
-
-                if os.path.isdir(path):
+                if UniPath.isdir(path):
                     QDesktopServices.openUrl(QUrl(f'{path}'))
                 else:
-                    self.vfs.logger.warning(f'Folder does not exist: {path}')
+                    self.error_dialog(f'You must extract or process the files before you can use them. Directory does not exist: {path}')
+                    self.logger.warning(f'Directory does not exist: {path}')
+            else:
+                self.logger.warning(f'There is no directory specified.')
+        else:
+            self.logger.warning(f'There is no VFS.')
 
     def slot_extract_clicked(self, checked):
-        self.extract(
-            'Extraction', os.path.join(self.vfs.working_dir, 'extracted'),
-            export_raw=self.ui.chkbx_export_raw_extract.isChecked(),
-            export_contents=self.ui.chkbx_export_contents_extract.isChecked(),
-            save_to_processed=self.ui.chkbx_export_processed_extract.isChecked(),
-            save_to_text=self.ui.chkbx_export_text_extract.isChecked(),
-            export_map_full=self.ui.cmbbx_map_format.currentText().find('Full') > -1,
-            export_map_tiles=self.ui.cmbbx_map_format.currentText().find('Tiles') > -1,
-        )
+        if self.vfs_view_current():
+            self.extract(
+                'Extraction', UniPath.join(self.vfs_view_current().vfs().working_dir, 'extracted'),
+                export_raw=self.ui.chkbx_export_raw_extract.isChecked(),
+                export_contents=self.ui.chkbx_export_contents_extract.isChecked(),
+                save_to_processed=self.ui.chkbx_export_processed_extract.isChecked(),
+                save_to_text=self.ui.chkbx_export_text_extract.isChecked(),
+                export_map_full=self.ui.cmbbx_map_format.currentText().find('Full') > -1,
+                export_map_tiles=self.ui.cmbbx_map_format.currentText().find('Tiles') > -1)
 
     def slot_extract_gltf_clicked(self, checked):
-        self.extract_gltf(
-            'GLTF2 / 3D', os.path.join(self.vfs.working_dir, 'gltf2_3d'),
-            save_to_one_dir=self.ui.chkbx_export_save_to_one_dir.isChecked(),
-            include_skeleton=self.ui.chkbx_export_3d_include_skeleton.isChecked(),
-            texture_format=self.ui.cmbbx_texture_format.currentText(),
-        )
+        if self.vfs_view_current():
+            self.extract_gltf(
+                'GLTF2 / 3D', UniPath.join(self.vfs_view_current().vfs().working_dir, 'gltf2_3d'),
+                save_to_one_dir=self.ui.chkbx_export_save_to_one_dir.isChecked(),
+                include_skeleton=self.ui.chkbx_export_3d_include_skeleton.isChecked(),
+                texture_format=self.ui.cmbbx_texture_format.currentText())
 
     def slot_mod_build_subset_clicked(self, checked):
         self.update_select_state(self.vfs_view_current())
 
     def slot_mod_prep_clicked(self, checked):
-        self.extract(
-            'Mod Prep', os.path.join(self.vfs.working_dir, 'mod'),
-            export_raw=self.ui.chkbx_export_raw_mods.isChecked(),
-            export_contents=self.ui.chkbx_export_contents_mods.isChecked(),
-            save_to_processed=self.ui.chkbx_export_processed_mods.isChecked(),
-            save_to_text=False,
-            export_map_full=False,
-            export_map_tiles=False,
-        )
+        if self.vfs_view_current():
+            self.extract(
+                'Mod Prep', UniPath.join(self.vfs_view_current().vfs().working_dir, 'mod'),
+                export_raw=self.ui.chkbx_export_raw_mods.isChecked(),
+                export_contents=self.ui.chkbx_export_contents_mods.isChecked(),
+                save_to_processed=self.ui.chkbx_export_processed_mods.isChecked(),
+                save_to_text=False,
+                export_map_full=False,
+                export_map_tiles=False)
 
     def slot_mod_build_clicked(self, checked):
         try:
@@ -363,9 +391,9 @@ class MainWindow(QMainWindow):
                 subset = self.vfs_view_current().nodes_selected_uids_get()
 
             self.builder.build_dir(
-                self.vfs,
-                os.path.join(self.vfs.working_dir, 'mod'),
-                os.path.join(self.vfs.working_dir, 'build'),
+                self.vfs_view_current().vfs(),
+                UniPath.join(self.vfs_view_current().vfs().working_dir, 'mod'),
+                UniPath.join(self.vfs_view_current().vfs().working_dir, 'build'),
                 subset=subset,
                 symlink_changed_file=False,
                 do_not_build_archive=self.ui.chkbx_mod_do_not_build_archives.isChecked()
@@ -391,7 +419,11 @@ class MainWindow(QMainWindow):
 
     def filter_text_changed(self):
         txt = self.filter_text_get()
-        same = False
+        
+        valid = False
+        changed = False
+        has_vfs = self.vfs_view_current() is not None
+
         try:
             valid = True
             re.compile(txt)  # test compile
@@ -399,18 +431,19 @@ class MainWindow(QMainWindow):
             valid = False
 
         if self.vfs_view_current():
-            same = txt == to_unicode(self.vfs_view_current().mask)
+            changed = txt != to_unicode(self.vfs_view_current().mask)
 
         if not valid:
             ss = 'QLineEdit {background-color: red;}'
-        elif same:
+        elif not changed:
             ss = ''
         else:
             ss = 'QLineEdit {background-color: yellow;}'
 
         self.ui.filter_edit.setStyleSheet(ss)
-        self.ui.filter_set_bt.setEnabled(valid and not same)
-        self.ui.filter_clear_bt.setEnabled(not same)
+        self.ui.filter_edit.setEnabled(has_vfs)
+        self.ui.filter_set_bt.setEnabled(has_vfs and valid and changed)
+        self.ui.filter_clear_bt.setEnabled(has_vfs and changed)
 
     def filter_text_key_release(self, source, event: QKeyEvent):
         if event.text() == '\r':
@@ -436,10 +469,10 @@ class MainWindow(QMainWindow):
         txt_in = self.ui.vhash_to_vpath_in_edit.text()
 
         txt_out = ''
-        if self.vfs is not None:
+        if self.vfs_view_current() is not None:
             try:
                 val_in = int(txt_in, 0)
-                strings = self.vfs.hash_string_match(hash32=val_in)
+                strings = self.vfs_view_current().vfs().hash_string_match(hash32=val_in)
                 for s in strings:
                     if len(s) > 0:
                         txt_out = s[1].decode('utf-8')
@@ -451,9 +484,9 @@ class MainWindow(QMainWindow):
     @Slot()
     def project_new(self, checked):
         if os.name == 'nt':
-            game_loc = 'C:/Program Files(x86)/Steam/steamapps/common/'
+            game_loc = 'C:/Program Files (x86)/Steam/steamapps/common/'
         else:
-            game_loc = os.path.expanduser('~/.steam/steamapps/common')
+            game_loc = UniPath.expanduser('~/.steam/steamapps/common')
 
         filename = QFileDialog.getOpenFileName(self, 'Create Project ...', game_loc, 'Game EXE (*.exe *.EXE)')
 
@@ -463,20 +496,21 @@ class MainWindow(QMainWindow):
                 self.logger.log('Unknown Game {}'.format(filename))
             else:
                 self.vfs_set(vfs)
+                
         else:
-            self.logger.log('Cannot Create {}'.format(filename))
+            self.logger.log('No game executable file selected')
 
     @Slot()
     def project_open(self, checked):
 
-        filename = QFileDialog.getOpenFileName(self, 'Open Project ...', os.path.join(deca_root(), '..', 'work'),
+        filename = QFileDialog.getOpenFileName(self, 'Open Project ...', UniPath.join(deca_root(), '..', 'work'),
                                                'Project File (project.json)')
         if filename is not None and len(filename[0]) > 0:
             project_file = filename[0]
             vfs = vfs_structure_open(project_file)
             self.vfs_set(vfs)
         else:
-            self.logger.log('Cannot Open {}'.format(filename))
+            self.logger.log('No project file selected')
 
     @Slot()
     def external_add(self, checked):
@@ -484,25 +518,25 @@ class MainWindow(QMainWindow):
         if filenames:
             for filename in filenames:
                 if len(filename) > 0:
-                    self.vfs.external_file_add(filename)
+                    self.vfs_view_current().vfs().external_file_add(filename)
         else:
-            self.logger.log('Cannot Open {}'.format(filenames))
+            self.logger.log('No file selected')
 
     @Slot()
     def file_gz_open(self, checked):
         filenames, selected_filter = QFileDialog.getOpenFileNames(self, 'Open GZ File ...',
-                                                                  os.path.join(deca_root(), '..', 'work'),
+                                                                  UniPath.join(deca_root(), '..', 'work'),
                                                                   'Any File (*)')
 
         if filenames and len(filenames[0]) > 0:
-            path, _ = os.path.split(filenames[0])
+            path, _ = UniPath.split(filenames[0])
             vfs = vfs_structure_empty(path, 'GenerationZero')
             self.vfs_set(vfs)
             for filename in filenames:
                 if len(filename) > 0:
-                    self.vfs.external_file_add(filename)
+                    self.vfs_view_current().vfs().external_file_add(filename)
         else:
-            self.logger.log('Cannot Open {}'.format(filenames))
+            self.logger.log('No GenZero file selected')
 
     @Slot()
     def exit_app(self, checked):
@@ -510,8 +544,8 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def tool_make_web_map(self, checked):
-        tool = ToolMakeWebMap(self.vfs)
-        tool.make_web_map(self.vfs.working_dir, True)
+        tool = ToolMakeWebMap(self.vfs_view_current().vfs())
+        tool.make_web_map(self.vfs_view_current().vfs().working_dir, True)
 
 
 def main():

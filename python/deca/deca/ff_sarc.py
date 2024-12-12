@@ -1,3 +1,4 @@
+from deca.path import UniPath
 from deca.file import ArchiveFile
 from deca.hashes import hash32_func
 from deca.util import align_to
@@ -54,12 +55,12 @@ class EntrySarc:
         self.is_symlink = self.offset == 0
 
         assert(self.v_hash == hash32_func(self.v_path))
-        assert(self.file_ext_hash == hash32_func(os.path.splitext(self.v_path)[1]))
+        assert(self.file_ext_hash == hash32_func(UniPath.splitext(self.v_path)[1]))
 
     def serialize_v3(self, f):
         # update entry based on v_path
         self.v_hash = hash32_func(self.v_path)
-        self.file_ext_hash = hash32_func(os.path.splitext(self.v_path)[1])
+        self.file_ext_hash = hash32_func(UniPath.splitext(self.v_path)[1])
 
         f.write_u32(self.string_offset)
         f.write_u32(self.offset)
@@ -111,9 +112,8 @@ class FileSarc:
 
             if self.ver2 == 2:
                 self.entries_begin = f.tell()
-                end_pos = f.tell() + self.dir_block_len
                 idx = 0
-                while f.tell() + 12 <= end_pos:  # 12 is minimum length of v2 sarc entry and they pad with some zeros
+                while f.tell() < self.dir_block_len:
                     entry = EntrySarc(idx)
                     entry.deserialize_v2(f)
                     self.entries.append(entry)

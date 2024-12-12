@@ -8,6 +8,7 @@ import zlib
 import numpy as np
 from typing import List
 
+from deca.path import UniPath
 from deca.util import common_prefix
 from deca.errors import *
 from deca.file import ArchiveFile, SubsetFile
@@ -334,9 +335,9 @@ class VfsDatabase(DbBase):
             init_display=False,
             max_uncompressed_cache_size=(2 * 1024**3)
     ):
-        super().__init__(os.path.join(working_dir, 'db', 'core.db'), logger)
+        super().__init__(UniPath.join(working_dir, 'db', 'core.db'), logger)
 
-        self.db_cg = DbCrossGame(os.path.abspath(os.path.join(working_dir, "..")), logger)
+        self.db_cg = DbCrossGame(UniPath.abspath(UniPath.join(working_dir, "..")), logger)
 
         self.project_file = project_file
         self.working_dir = working_dir
@@ -605,14 +606,21 @@ class VfsDatabase(DbBase):
         r1 = db_to_vfs_node(r1)
         return r1
 
-    # def nodes_where_uid(self, uids):
-    #     nodes = self.db_query_one(
-    #         "select * from core_nodes where node_id in (?)",
-    #         [uids],
-    #         dbg='nodes_where_uid')
-    #
-    #     nodes = [db_to_vfs_node(node) for node in nodes]
-    #     return nodes
+    def nodes_where_uid(self, uids, output=None):
+        if output is not None:
+            result_str = output
+        else:
+            result_str = '*'
+        nodes = []
+        CHUNK_SIZE = 512 # limit to SQLITE_MAX_VARIABLE_NUMBER and SQLITE_LIMIT_SQL_LENGTH
+        for i in range(0, len(uids), CHUNK_SIZE):
+            nodes += self.db_query_all(
+                "select " + result_str + " from core_nodes where node_id in (" + ",".join(map(str, uids[i:i + CHUNK_SIZE])) + ")",
+                dbg='nodes_where_uid')
+        if output is not None:
+            return nodes
+        else:
+            return [db_to_vfs_node(node) for node in nodes]
 
     def nodes_where_match(
             self,
@@ -1260,7 +1268,7 @@ class VfsDatabase(DbBase):
 
         return adf_map, adf_missing
 
-    def generate_cache_file_name(self, node: VfsNode):
+    def generate_cache_file_name(self, node: VfsNode, ext = '.dat'):
         pid = node.pid
         parent_nodes = []
         parent_paths = []
@@ -1271,15 +1279,15 @@ class VfsDatabase(DbBase):
             pp = None
             if parent_node.p_path is not None:
                 prefix, end0, end1 = common_prefix(parent_node.p_path, self.game_info.game_dir)
-                f, e = os.path.splitext(end0)
+                f, e = UniPath.splitext(end0)
                 if e != '.tab':
                     pp = end0
             else:
-                pp = parent_node.v_hash_to_str() + '.dat'
+                pp = parent_node.v_hash_to_str() + ext
             if pp is not None:
                 parent_paths.append(pp)
-        cache_dir = os.path.join(self.working_dir, '__CACHE__/', *parent_paths[::-1])
-        file_name = os.path.join(cache_dir, node.v_hash_to_str() + '.dat')
+        cache_dir = UniPath.join(self.working_dir, '__CACHE__/', *parent_paths[::-1])
+        file_name = UniPath.join(cache_dir, node.v_hash_to_str() + ext)
 
         global dumped_cache_dir
         if not dumped_cache_dir:
@@ -1288,16 +1296,82 @@ class VfsDatabase(DbBase):
 
         return file_name
 
-    def file_obj_from(self, node: VfsNode):
+    def file_obj_from(self, node: VfsNode, compression_pass = False):
         compression_type = node.compression_type_get()
+        compression_flag = node.compression_flag_get()
+
+        if not compression_pass:
+            if compression_flag in {compression_flag_aaf}:
+                file_name = self.generate_cache_file_name(node, '.xdat')
+                if not UniPath.isfile(file_name):
+                    
+                    # Extract AAF from compressed ARC/TAB
+                    if compression_type in {compression_v2_zlib, compression_v4_01_zlib, compression_v4_03_zstd, compression_v4_04_oo}:
+                        in_buffer = self.file_obj_from(node, True)
+
+                    # Extract AAF from non-compressed ARC/TAB
+                    elif compression_type in {compression_00_none}:
+                        parent_node = self.node_where_uid(node.pid)
+                        with ArchiveFile(self.file_obj_from(parent_node)) as pf:
+                            pf.seek(node.offset)
+                            in_buffer = pf.read(node.size_c)
+                            in_buffer = io.BytesIO(in_buffer)
+                    else:
+                        self.logger.log(f'NOT IMPLEMENTED: COMPRESSION TYPE {compression_type}: B: id:{node.uid}, pid:{node.pid}, v:{node.v_path}, p:{node.p_path}, cs:{node.size_c}, us:{node.size_u}')
+                        raise EDecaUnknownCompressionType(compression_type)
+
+                    # Extract file from AAF container
+                    # self.logger.log(f'B: id:{node.uid}, pid:{node.pid}, v:{node.v_path}, p:{node.p_path}, cs:{node.size_c}, us:{node.size_u}')
+                    buffer_out = extract_aaf(ArchiveFile(in_buffer))
+                    # self.logger.log(f'E: id:{node.uid}, pid:{node.pid}, v:{node.v_path}, p:{node.p_path}, cs:{node.size_c}, us:{node.size_u}')
+
+                    make_dir_for_file(file_name)
+                    with open(file_name, 'wb') as f_out:
+                        f_out.write(buffer_out)
+
+                    return io.BytesIO(buffer_out)
+                else:
+                    return open(file_name, 'rb')
 
         if node.file_type == FTYPE_ARC:
             return open(node.p_path, 'rb')
         elif node.file_type == FTYPE_TAB:
             return self.file_obj_from(self.node_where_uid(node.pid))
+        elif node.file_type == FTYPE_SYMLINK:
+            return io.BytesIO(bytearray())
+
+        elif compression_type in {compression_v2_zlib}:
+            file_name = self.generate_cache_file_name(node)
+            if not UniPath.isfile(file_name):
+                parent_node = self.node_where_uid(node.pid)
+                make_dir_for_file(file_name)
+                with self.file_obj_from(parent_node) as f_in:
+                    buffer_out = b''
+                    
+                    blocks = node.blocks_get(self)
+                    if blocks:
+                        for bi, (block_offset, compressed_len, uncompressed_len) in enumerate(blocks):
+                            f_in.seek(block_offset)
+                            in_buffer = f_in.read(compressed_len)
+                            if compressed_len == uncompressed_len:
+                                buffer_out += in_buffer
+                            else:
+                                buffer_out += zlib.decompress(in_buffer, -15)
+                    else:
+                        f_in.seek(node.offset)
+                        in_buffer = f_in.read(node.size_c)
+                        buffer_out = zlib.decompress(in_buffer, -15)
+
+                with open(file_name, 'wb') as f_out:
+                    f_out.write(buffer_out)
+                return io.BytesIO(buffer_out)
+            else:
+                return open(file_name, 'rb')
+
+        # 2024.05.20... Deprecated! This block of code can be safely removed. We will keep it for a while for compatibility purposes.
         elif compression_type in {compression_v3_zlib}:
             file_name = self.generate_cache_file_name(node)
-            if not os.path.isfile(file_name):
+            if not UniPath.isfile(file_name):
                 parent_node = self.node_where_uid(node.pid)
                 with ArchiveFile(self.file_obj_from(parent_node)) as pf:
                     pf.seek(node.offset)
@@ -1318,7 +1392,7 @@ class VfsDatabase(DbBase):
         elif compression_type in {compression_v4_01_zlib, compression_v4_03_zstd, compression_v4_04_oo}:
             file_name = self.generate_cache_file_name(node)
 
-            if not os.path.isfile(file_name):
+            if not UniPath.isfile(file_name):
                 parent_node = self.node_where_uid(node.pid)
                 make_dir_for_file(file_name)
                 good_blocks = []
@@ -1333,10 +1407,11 @@ class VfsDatabase(DbBase):
                         in_buffer = f_in.read(compressed_len)
 
                         if compression_type in {compression_v4_01_zlib}:
-                            buffer_ret = zlib.decompress(in_buffer)
-                            ret = len(buffer_ret)
-                            # buffer_ret = in_buffer
-                            # ret = compressed_len
+                            if compressed_len == uncompressed_len:
+                                buffer_ret, ret = in_buffer, len(in_buffer)
+                            else:
+                                buffer_ret = zlib.decompress(in_buffer)
+                                ret = len(buffer_ret)
                         elif compression_type in {compression_v4_03_zstd}:
                             if compressed_len == uncompressed_len:
                                 buffer_ret, ret = in_buffer, len(in_buffer)

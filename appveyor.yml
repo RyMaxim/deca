@@ -2,11 +2,14 @@ version: build-{build}
 max_jobs: 1
 image: Visual Studio 2022
 clone_folder: C:\prj\deca
+
+skip_branch_with_pr: true
+
 build_script:
 - cmd: >-
     SET
 
-    SET PATH=C:\Python38-x64;C:\Python38-x64\Scripts;%path%
+    SET PATH=C:\Python312-x64;C:\Python312-x64\Scripts;%path%
 
 
     echo GET SUBMODULES
@@ -35,9 +38,11 @@ build_script:
     
     cd C:\prj\deca\build
 
-    cmake -DPython3_ROOT_DIR=C:\Python38-x64 -DCMAKE_BUILD_TYPE=Release -G "NMake Makefiles" ..
+    cmake -DPython3_ROOT_DIR=C:\Python312-x64 -DCMAKE_BUILD_TYPE=Release -G "NMake Makefiles" ..
 
     nmake
+
+    mkdir C:\prj\deca\root
 
     mkdir C:\prj\deca\root\bin
     
@@ -47,16 +52,31 @@ build_script:
     
     copy C:\prj\deca\build\cpp\process_image\process_image* C:\prj\deca\root\lib\ 
 
+    copy C:\prj\deca\build\extern\HavokLib\source\havok.dll C:\prj\deca\root\bin\
+
+    copy C:\prj\deca\build\extern\HavokLib\3rd_party\PreCore\precore6.dll C:\prj\deca\root\bin\
+
+    copy C:\prj\deca\build\extern\HavokLib\3rd_party\PreCore\3rd_party\glm\glm\glm_shared.dll C:\prj\deca\root\bin\
+
+    copy C:\prj\deca\build\extern\HavokLib\3rd_party\PreCore\3rd_party\pugixml\pugixml1.dll C:\prj\deca\root\bin\
+
+
+    echo UN-PATCH external libs
+    
+    cd c:\prj\deca\extern\HavokLib\3rd_party\PreCore
+    
+    git apply -R c:\prj\deca\patch\pre_core.patch
+
 
     echo SETUP PYTHON
 
     cd C:\prj\deca
 
-    c:\Python38-x64\python --version
+    c:\Python312-x64\python --version
 
-    c:\Python38-x64\python -m pip list
+    c:\Python312-x64\python -m pip list
 
-    c:\Python38-x64\python -m venv venv
+    c:\Python312-x64\python -m venv venv
 
     venv\Scripts\activate
 
@@ -106,3 +126,4 @@ deploy:
 on_success:
   - ps: cd C:\prj\deca
   - ps: python ./appveyor/on_success.py success CHANGELOG.md $env:BUILD_WEBHOOK_URL
+

@@ -1,8 +1,8 @@
 from .viewer import *
 from .viewer_text import DataViewerText
 from deca.ff_obc import Obc
-from PySide2.QtWidgets import QSizePolicy,  QVBoxLayout, QTextEdit
-from PySide2.QtGui import QFont
+from PySide6.QtWidgets import QSizePolicy,  QVBoxLayout, QTextEdit
+from PySide6.QtGui import QFont
 
 
 class DataViewerObc(DataViewerText):

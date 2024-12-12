@@ -12,8 +12,8 @@ from .viewer_text import DataViewerText
 from .viewer_sarc import DataViewerSarc
 from .viewer_obc import DataViewerObc
 from .deca_interfaces import IVfsViewSrc
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QSizePolicy, QWidget, QVBoxLayout, QTabWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QSizePolicy, QWidget, QVBoxLayout, QTabWidget
 
 
 class DataViewWidget(QWidget):
@@ -44,12 +44,24 @@ class DataViewWidget(QWidget):
         self.tab_rtpc_index = self.tab_widget.addTab(self.tab_rtpc, 'RTPC')
         self.tab_obc_index = self.tab_widget.addTab(self.tab_obc, 'OBC')
 
+        self.tab_widget.setEnabled(False)
+        self.tab_widget.setTabEnabled(self.tab_info_index, True)
+        self.tab_widget.setTabEnabled(self.tab_raw_index, False)
+        self.tab_widget.setTabEnabled(self.tab_text_index, False)
+        self.tab_widget.setTabEnabled(self.tab_sarc_index, False)
+        self.tab_widget.setTabEnabled(self.tab_image_index, False)
+        self.tab_widget.setTabEnabled(self.tab_adf_index, False)
+        self.tab_widget.setTabEnabled(self.tab_adf_gdc_index, False)
+        self.tab_widget.setTabEnabled(self.tab_rtpc_index, False)
+        self.tab_widget.setTabEnabled(self.tab_obc_index, False)
+
         size = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         size.setVerticalStretch(1)
         self.tab_widget.setSizePolicy(size)
 
         self.main_layout = QVBoxLayout()
         self.main_layout.addWidget(self.tab_widget)
+        self.main_layout.setContentsMargins(0,0,0,0);
         self.setLayout(self.main_layout)
 
     def data_source_set(self, data_source: IVfsViewSrc):
@@ -69,6 +81,8 @@ class DataViewWidget(QWidget):
 
         vnode = vnodes[0]
 
+        self.tab_widget.setEnabled(True)
+        
         self.tab_widget.setTabEnabled(self.tab_info_index, True)
         self.tab_info.vnode_process(vfs, vnode)
 

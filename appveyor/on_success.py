@@ -29,17 +29,29 @@ else:
 
 avatar_url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/Appveyor_logo.svg/256px-Appveyor_logo.svg.png'
 
-APPVEYOR_REPO_COMMIT = os.environ.get("APPVEYOR_REPO_COMMIT", None)
+APPVEYOR_REPO_COMMIT = None
+
+# APPVEYOR_REPO_COMMIT = os.environ.get("APPVEYOR_REPO_COMMIT", None)
 APPVEYOR_BUILD_VERSION = os.environ.get("APPVEYOR_BUILD_VERSION", None)
 APPVEYOR_BUILD_NUMBER = os.environ.get("APPVEYOR_BUILD_NUMBER", None)
 APPVEYOR_REPO_NAME = os.environ.get("APPVEYOR_REPO_NAME", None)
 APPVEYOR_REPO_BRANCH = os.environ.get("APPVEYOR_REPO_BRANCH", None)
 APPVEYOR_JOB_ID = os.environ.get("APPVEYOR_JOB_ID", None)
 
+print(f'APPVEYOR_REPO_COMMIT (env) -> {APPVEYOR_REPO_COMMIT}')
+print(f'APPVEYOR_BUILD_VERSION (env) -> {APPVEYOR_BUILD_VERSION}')
+print(f'APPVEYOR_BUILD_NUMBER (env) -> {APPVEYOR_BUILD_NUMBER}')
+print(f'APPVEYOR_REPO_NAME (env) -> {APPVEYOR_REPO_NAME}')
+print(f'APPVEYOR_REPO_BRANCH (env) -> {APPVEYOR_REPO_BRANCH}')
+print(f'APPVEYOR_JOB_ID (env) -> {APPVEYOR_JOB_ID}')
+
 
 if not APPVEYOR_REPO_COMMIT:
     result = subprocess.run(['git', 'log', '-1', '--pretty=%H'], stdout=subprocess.PIPE)
     APPVEYOR_REPO_COMMIT = result.stdout.decode('utf-8').rstrip()
+
+    print(f'APPVEYOR_REPO_COMMIT (git) -> {APPVEYOR_REPO_COMMIT}')
+
 
 result = subprocess.run(['git', 'log', '-1', APPVEYOR_REPO_COMMIT, '--pretty=%aN'], stdout=subprocess.PIPE)
 AUTHOR_NAME = result.stdout.decode('utf-8').rstrip()
@@ -53,7 +65,6 @@ COMMIT_SUBJECT = result.stdout.decode('utf-8').rstrip()
 result = subprocess.run(['git', 'log', '-1', APPVEYOR_REPO_COMMIT, '--pretty=%b'], stdout=subprocess.PIPE)
 COMMIT_MESSAGE = result.stdout.decode('utf-8').rstrip()
 
-# print(f'APPVEYOR_REPO_COMMIT -> {APPVEYOR_REPO_COMMIT}')
 # print(f'AUTHOR_NAME -> {AUTHOR_NAME}')
 # print(f'COMMITTER_NAME -> {COMMITTER_NAME}')
 # print(f'COMMIT_SUBJECT -> {COMMIT_SUBJECT}')

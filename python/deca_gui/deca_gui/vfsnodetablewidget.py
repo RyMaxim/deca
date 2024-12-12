@@ -3,10 +3,10 @@ from .vfs_widgets import used_color_calc
 from deca.db_processor import VfsNode
 from deca.db_view import VfsView
 from deca.ff_types import *
-import PySide2
-from PySide2.QtCore import QAbstractTableModel, QModelIndex, Qt, Signal
-from PySide2.QtGui import QColor
-from PySide2.QtWidgets import QHeaderView, QSizePolicy, QTableView, QWidget, QHBoxLayout
+import PySide6
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, Signal
+from PySide6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QHeaderView, QSizePolicy, QTableView, QWidget, QHBoxLayout, QAbstractItemView, QApplication
 
 
 class VfsNodeTableModel(QAbstractTableModel):
@@ -51,7 +51,7 @@ class VfsNodeTableModel(QAbstractTableModel):
 
         self.endResetModel()
 
-    def sort(self, column: int, order: PySide2.QtCore.Qt.SortOrder):
+    def sort(self, column: int, order: PySide6.QtCore.Qt.SortOrder):
         # if self.remap_uid is None:
         #     rm = list(range(len(self.vfs_view.table_vfsnode)))
         #     self.remap_uid = rm
@@ -136,7 +136,7 @@ class VfsNodeTableModel(QAbstractTableModel):
                     if node.ext_hash is None:
                         return ''
                     else:
-                        return '{:08X}'.format(node.ext_hash)
+                        return '{:08x}'.format(node.ext_hash)
                 elif column == 6:
                     return '{}'.format(node.size_u)
                 elif column == 7:
@@ -184,9 +184,8 @@ class VfsNodeTableWidget(QWidget):
         self.table_view = QTableView()
         self.table_view.clicked.connect(self.clicked)
         self.table_view.doubleClicked.connect(self.double_clicked)
-        font = self.table_view.font()
-        font.setPointSize(8)
-        self.table_view.setFont(font)
+        self.table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_view.setFont(QFont(QApplication.font().family(), QApplication.font().pointSize()))
         # self.table_view.setSortingEnabled(True)
         self.table_view.setModel(self.model)
 
@@ -196,6 +195,11 @@ class VfsNodeTableWidget(QWidget):
         self.horizontal_header.setSectionResizeMode(QHeaderView.Interactive)
         self.vertical_header.setSectionResizeMode(QHeaderView.Interactive)
         self.horizontal_header.setStretchLastSection(True)
+        # To calculate default cell height we should use painters font-metrics instead of constructing a QFontMetrics(font)
+        # N * [line-height] + 2 * [1 pixel space around]
+        self.vertical_header.setMinimumSectionSize(    self.table_view.fontMetrics().lineSpacing() + 2)
+        self.vertical_header.setDefaultSectionSize(2 * self.table_view.fontMetrics().lineSpacing() + 2)
+        self.vertical_header.setVisible(False)
 
         # QWidget Layout
         self.main_layout = QHBoxLayout()
@@ -221,9 +225,14 @@ class VfsNodeTableWidget(QWidget):
     def clicked(self, index):
         if index.isValid():
             if self.model.vfs_view is not None:
-                items = list(set([self.model.uid_table[idx.row()] for idx in self.table_view.selectedIndexes()]))
-                items = [self.model.vfs_view.node_where_uid(i) for i in items]
-                self.model.vfs_view.paths_set(items)
+                #see: https://bugreports.qt.io/browse/QTBUG-59478
+                items = list()
+                selection = self.table_view.selectionModel().selection()
+                for selectionRange in selection:
+                    items += self.model.uid_table[selectionRange.top(): selectionRange.top() + selectionRange.height()]
+                items = self.model.vfs_view_get().nodes_where_uid(items)
+                items = [item for item in items if item.file_type != FTYPE_SYMLINK and item.v_path is not None and item.p_path is None]
+                self.model.vfs_view_get().capture_set(items)
 
     def double_clicked(self, index):
         if index.isValid():

@@ -1,6 +1,6 @@
 from .viewer import *
-from PySide2.QtWidgets import QSizePolicy,  QVBoxLayout, QTextEdit
-from PySide2.QtGui import QFont
+from PySide6.QtWidgets import QSizePolicy,  QVBoxLayout, QTextEdit
+from PySide6.QtGui import QFont
 
 
 class DataViewerInfo(DataViewer):
@@ -10,6 +10,7 @@ class DataViewerInfo(DataViewer):
         self.text_box = QTextEdit()
         self.text_box.setReadOnly(True)
         font = QFont("Courier", 8)
+        font.setStyleHint(QFont.Courier)
         self.text_box.setFont(font)
         self.text_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         size = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)

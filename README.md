@@ -44,8 +44,10 @@ Support varies among the games, people are activily using **deca** for GenZero a
 |---|---|
 |Avalanche Studios / Systemic Reaction|Generation Zero®|
 |Avalanche Studios / Expansive Worlds|theHunter™: Call of the Wild|
+|Avalanche Studios / Expansive Worlds|Call of the Wild: The Angler™|
 |Avalanche Studios|Just Cause 3|
 |Avalanche Studios|Just Cause 4|
+|Avalanche Studios / Warner Bros. Interactive Entertainment.|Mad Max (2015)|
 |Avalanche Studios|RAGE 2|
 |Avalanche Studios / Systemic Reaction|Second Extinction|
 

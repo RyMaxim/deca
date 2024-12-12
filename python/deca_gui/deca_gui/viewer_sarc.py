@@ -1,8 +1,8 @@
 from .viewer import *
 from deca.ff_sarc import FileSarc
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QSizePolicy,  QVBoxLayout, QTextEdit, QPushButton, QHBoxLayout
-from PySide2.QtGui import QFont
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QSizePolicy,  QVBoxLayout, QTextEdit, QPushButton, QHBoxLayout
+from PySide6.QtGui import QFont
 
 
 class DataViewerSarc(DataViewer):
@@ -16,6 +16,7 @@ class DataViewerSarc(DataViewer):
         self.text_box = QTextEdit()
         self.text_box.setReadOnly(True)
         font = QFont("Courier", 8)
+        font.setStyleHint(QFont.Courier)
         self.text_box.setFont(font)
         self.text_box.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         size = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)

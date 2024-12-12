@@ -4,9 +4,9 @@ from deca.db_view import VfsView
 from deca.db_processor import VfsNode
 from deca.ff_types import *
 from deca.dxgi_types import dxgi_name_db
-from PySide2.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal
-from PySide2.QtGui import QColor
-from PySide2.QtWidgets import QHeaderView, QSizePolicy, QWidget, QHBoxLayout, QTreeView, QAbstractItemView
+from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt, Signal
+from PySide6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QHeaderView, QSizePolicy, QWidget, QHBoxLayout, QTreeView, QAbstractItemView, QApplication
 
 
 class VfsDirLeaf(object):
@@ -42,8 +42,6 @@ class VfsDirBranch(object):
         if self.parent is not None:
             s = self.parent.v_path(True)
             s = s + self.name + '/'
-        if not child_called:
-            s = s + r'%'
         return s
 
     def child_count(self):
@@ -191,10 +189,7 @@ class VfsDirModel(QAbstractItemModel):
                     else:
                         return '{} ({})'.format(dxgi_name_db.get(vnode.file_sub_type, 'UNKNOWN'), vnode.file_sub_type)
                 elif column == 4:
-                    if vnode.v_hash is None:
-                        return ''
-                    else:
-                        return '{:08X}'.format(vnode.v_hash)
+                    return vnode.v_hash_to_str()
                 elif column == 5:
                     if vnode.ext_hash is None:
                         return ''
@@ -208,7 +203,7 @@ class VfsDirModel(QAbstractItemModel):
                     return '{}, {}, {}'.format(node.in_gdcc_count, len(node.uids_hard), len(node.uids_sym))
                 elif column == 9:
                     return '{}'.format(self.vfs_view.lookup_note_from_file_path(vnode.v_path))
-        elif role == Qt.BackgroundColorRole:
+        elif role == Qt.BackgroundRole:
             if isinstance(node, VfsDirLeaf):
                 uid = node.uids[0]
                 vnode: VfsNode = self.vfs_view.node_where_uid(uid)
@@ -243,6 +238,7 @@ class VfsDirWidget(QWidget):
         font.setPointSize(8)
         self.view.setFont(font)
         self.view.setModel(self.source_model)
+        self.view.setFont(QFont(QApplication.font().family(), QApplication.font().pointSize()))
 
         # # QTableView Headers
         self.header = self.view.header()
@@ -268,7 +264,7 @@ class VfsDirWidget(QWidget):
                 items = self.view.selectedIndexes()
                 items = list(set([idx.internalPointer() for idx in items]))
                 items = [idx.v_path() for idx in items if isinstance(idx, VfsDirLeaf) or isinstance(idx, VfsDirBranch)]
-                self.source_model.vfs_view.paths_set(items)
+                self.source_model.vfs_view_get().capture_set(items)
 
     def double_clicked(self, index):
         if index.isValid():

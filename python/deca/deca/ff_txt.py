@@ -12,5 +12,5 @@ def load_json(buffer):
     try:
         data = json.load(fp)
         return data
-    except json.decoder.JSONDecodeError:
+    except (UnicodeDecodeError, json.decoder.JSONDecodeError) :
         return None

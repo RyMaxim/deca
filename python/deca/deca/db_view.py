@@ -1,7 +1,8 @@
 import re
 from typing import TypeVar, Optional
 
-from .util import DecaSignal, to_unicode, common_prefix
+from .util import DecaSignal, to_unicode
+from .path import UniPath
 from .ff_types import *
 from .db_core import VfsDatabase, VfsNode
 from .ff_adf import AdfDatabase
@@ -14,15 +15,15 @@ class VfsView:
         self._vfs: Optional[VfsDatabase] = None
         self._adf_db: Optional[AdfDatabase] = None
         self._vfs_view: Optional[VfsView] = None
-        self.paths = None
+        self.capture = None
         self.mask = None
         self.parent_id = None
         self._nodes_visible_dirty = True
-        self._nodes_visible = []
+        self._nodes_visible = dict()
         self._nodes_visible_uids = set()
         self._nodes_visible_uids_no_vpaths = set()
         self._nodes_selected_dirty = True
-        self._nodes_selected = []
+        self._nodes_selected = dict()
         self._nodes_selected_uids = set()
         self._nodes_selected_uids_no_vpaths = set()
 
@@ -38,7 +39,7 @@ class VfsView:
             self._vfs_view = vfs_view
             self._vfs = vfs_view._vfs
             self._adf_db = vfs_view._adf_db
-            self.paths = vfs_view.paths
+            self.capture = vfs_view.capture
             self.mask = vfs_view.mask
             vfs_view.signal_visible_changed.connect(self, lambda x: x.slot_visible_changed())
         elif len(params) == 3:
@@ -47,7 +48,7 @@ class VfsView:
             self._vfs_view = None
             self._vfs = vfs
             self._adf_db = AdfDatabase(vfs)
-            self.paths = params[1]
+            self.capture = params[1]
             self.mask = params[2]
             vfs.db_changed_signal.connect(self, lambda x: x.slot_visible_changed())
         else:
@@ -71,66 +72,72 @@ class VfsView:
         print('VfsView.mask_set')
         self._nodes_visible_dirty = True
         self.mask = mask
+        self.capture = set()
         self.signal_visible_changed.call()
 
-    def paths_count(self):
-        if self.paths is None:
+    def capture_count(self):
+        if self.capture is None:
             return 0
         else:
-            return len(self.paths)
+            return len(self.capture)
 
-    def paths_set(self, paths):
+    def capture_set(self, capture):
         self._nodes_selected_dirty = True
-        self.paths = paths
+        self.capture = capture
         self.signal_selection_changed.call()
 
-    def paths_summary_str(self):
-        if self.paths_count() == 0:
-            return ''
-        elif self.paths_count() == 1:
-            return to_unicode(self.paths[0])
+    def capture_path_summary_str(self):
+        count = self.capture_count()
+        if count == 0:
+            return '-- N/A --'
+        elif count == 1:
+            capture = self.capture[0]
+            if isinstance(capture, VfsNode):
+                return to_unicode(capture.v_path)
+            else:
+                if len(capture) == 0:
+                    return '-- ALL --'
+                elif self.capture[0][-1] == '/':
+                    return to_unicode(capture) + '*'
+                else:
+                    return to_unicode(capture)
         else:
-            return '**MULTIPLE**'
+            return '-- MULTIPLE -- '
 
-    def common_prefix(self):
-        path = self.paths[0]
-        for p in self.paths:
-            path, _, _ = common_prefix(path, p)
+    def capture_path_common_prefix(self):
+        if self.capture is not None:
+            paths = [capture.v_path if isinstance(capture, VfsNode) else capture for capture in self.capture]
+            return to_unicode(UniPath.commonpath(paths))
+        return str()
 
-        return path
-
-    def node_accumulate(self, nodes_map, nodes_uids, nodes_uids_no_vpath, mask=None, pid_in=None, id_pat=None):
-        if isinstance(id_pat, VfsNode):
-            nodes_all = [(id_pat.uid, id_pat.v_path, id_pat.file_type, id_pat.offset)]
+    def node_accumulate(self, nodes_map, nodes_uids, nodes_uids_no_vpath, mask=None, pid_in=None, capture=None):
+        if isinstance(capture, VfsNode):
+            nodes_all = [(capture.uid, capture.v_path, capture.p_path, capture.file_type, capture.offset)]
         else:
             nodes_all = self.vfs().nodes_where_match(
-                v_path_like=id_pat,
+                v_path_like=capture,
                 pid_in=pid_in,
-                output='node_id, v_path, file_type, parent_offset',
+                output='node_id, v_path, p_path, file_type, parent_offset',
             )
 
-        for uid, v_path, file_type, parent_offset in nodes_all:
+        for uid, v_path, p_path, file_type, parent_offset in nodes_all:
             nodes_uids.add(uid)
 
             if v_path is None:
-                nodes_uids_no_vpath.add(uid)
+                if p_path is None:
+                    nodes_uids_no_vpath.add(uid)
             else:
                 v_path = to_unicode(v_path)
-
-                lst0 = nodes_map.get(v_path, None)
-
-                if lst0 is None:
+                    
+                lst = nodes_map.get(v_path, None)
+                if lst is None:
                     lst = [[], []]
-                else:
-                    lst = lst0
+                    nodes_map[v_path] = lst
 
                 if file_type != FTYPE_SYMLINK and parent_offset is not None:
                     lst[0].append(uid)
                 else:
                     lst[1].append(uid)
-
-                if lst0 is None:
-                    nodes_map[v_path] = lst
 
         mask_expr = re.compile(to_unicode(mask))
         to_erase = [vp for vp in nodes_map.keys() if mask_expr.match(vp) is None]
@@ -150,7 +157,7 @@ class VfsView:
             self.vfs().logger.log(f'Nodes Visible Begin')
 
             # visible nodes
-            self._nodes_visible = {}
+            self._nodes_visible = dict()
             self._nodes_visible_uids = set()
             self._nodes_visible_uids_no_vpaths = set()
 
@@ -167,20 +174,21 @@ class VfsView:
             self.vfs().logger.log(f'Nodes Selected Begin')
 
             # selected nodes
-            self._nodes_selected = {}
+            self._nodes_selected = dict()
             self._nodes_selected_uids = set()
             self._nodes_selected_uids_no_vpaths = set()
 
-            if self.paths is not None:
-                for v in self.paths:
-                    id_pat = v
+            if self.capture is not None:
+                for capture in self.capture:
 
-                    if isinstance(id_pat, str):
-                        id_pat = v.encode('ascii')
+                    if isinstance(capture, str):
+                        if len(capture) > 0 and capture[-1] == '/':
+                            capture = capture + r'%'
+                        capture = capture.encode('ascii')
 
                     self.node_accumulate(
                         self._nodes_selected, self._nodes_selected_uids, self._nodes_selected_uids_no_vpaths,
-                        mask=self.mask, pid_in=self.parent_id, id_pat=id_pat)
+                        mask=self.mask, pid_in=self.parent_id, capture=capture)
 
             self._nodes_selected_dirty = False
             self.vfs().logger.log(f'Nodes Selected End')
@@ -232,6 +240,9 @@ class VfsView:
 
     def node_where_uid(self, uid):
         return self.vfs().node_where_uid(uid)
+
+    def nodes_where_uid(self, uids):
+        return self.vfs().nodes_where_uid(uids)
 
     def lookup_note_from_file_path(self, path):
         return self.vfs().lookup_note_from_file_path(path)

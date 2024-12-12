@@ -2,9 +2,9 @@ from .viewer import *
 from deca.ff_avtx import Ddsc
 import deca.ff_avtx
 import os
-from PySide2.QtCore import Qt, QPoint, QRectF, Signal
-from PySide2.QtGui import QImage, QPixmap, QBrush, QColor
-from PySide2.QtWidgets import \
+from PySide6.QtCore import Qt, QPoint, QRectF, Signal
+from PySide6.QtGui import QImage, QPixmap, QBrush, QColor
+from PySide6.QtWidgets import \
     QGraphicsView, QSizePolicy, QVBoxLayout, QHBoxLayout, QComboBox, QPushButton, QGraphicsScene, QGraphicsPixmapItem, \
     QFrame, QWidget, QToolButton, QLineEdit, QCheckBox
 from deca.ff_types import *

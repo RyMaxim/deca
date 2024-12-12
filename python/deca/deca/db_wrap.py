@@ -1,10 +1,12 @@
 import os
+
 from .db_core import VfsDatabase, VfsNode, GtocArchiveEntry
 from .db_cross_game import DbCrossGame
 from .ff_adf import AdfDatabase
 from .ff_types import *
 from .db_types import *
 from .ff_determine import determine_file_type_and_size
+from .path import UniPath
 from .file import ArchiveFile
 
 
@@ -20,7 +22,7 @@ def determine_file_type_by_name(vfs: VfsDatabase, node: VfsNode):
                 filename = node.p_path
 
             if filename is not None:
-                file, ext = os.path.splitext(filename)
+                file, ext = UniPath.splitext(filename)
                 if ext.startswith(b'.atx'):
                     node.file_type = FTYPE_ATX
                 elif ext == b'.hmddsc':
@@ -58,7 +60,7 @@ def determine_file_type(vfs: VfsDatabase, node: VfsNode):
         if node.offset is None:
             node.file_type = FTYPE_SYMLINK
         else:
-            if node.compression_type_get() in {compression_v4_01_zlib, compression_v4_03_zstd, compression_v4_04_oo}:
+            if node.compression_type_get() in {compression_v2_zlib, compression_v4_01_zlib, compression_v4_03_zstd, compression_v4_04_oo}:
                 # todo special case for jc4 /rage2 compression needs to be cleaned up
                 with vfs.file_obj_from(node) as f:
                     node.file_type, _, node.magic, node.file_sub_type = \
@@ -73,7 +75,7 @@ def determine_file_type(vfs: VfsDatabase, node: VfsNode):
                             determine_file_type_and_size(f, node.size_c)
 
     if node.file_type == FTYPE_AAF:
-        node.compression_type_set(compression_v3_zlib)
+        node.compression_flag_set(compression_flag_aaf)
         with vfs.file_obj_from(node) as f:
             node.file_type, node.size_u, node.magic, node.file_sub_type = \
                 determine_file_type_and_size(f, node.size_u)

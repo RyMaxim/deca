@@ -1,6 +1,6 @@
 {
   "game_id": "mm",
-  "exe_match": ".*MadMax.*",
+  "exe_match": ".*(MadMax|AVAMain).*",
   "archive_version": 2,
   "file_hash_size": 4,
   "oo_decompress_dll": false,
@@ -8,21 +8,11 @@
     ""
   ],
   "world_patches": [
-    "terrain/hp/patches/",
-    "terrain/jc3/patches/"
+    ""
   ],
-  "world_occluders": [
-    "terrain/hp/occluder/",
-    "terrain/jc3/occluder/"
-  ],
-  "world_navheightfields": [
-    "terrain/hp/navheightfield/globalhires/",
-    "terrain/jc3/navheightfield/globalhires/"
-  ],
-  "world_hm": [
-    "terrain/hp/horizonmap/horizon_",
-    "terrain/jc3/horizonmap/horizon_"
-  ],
+  "world_occluders": [],
+  "world_navheightfields": [],
+  "world_hm": [],
   "world_ai": [
     "ai/tiles/"
   ],
@@ -33,19 +23,25 @@
     3
   ],
   "map_max_count": 500,
-  "map_prefixes": [
-    "textures/ui/",
-    "dlc/agency/textures/ui/map0/",
-    "dlc/agency/textures/ui/map1/",
-    "dlc/agency/textures/ui/map2/",
-    "dlc/agency/textures/ui/map3/",
-    "dlc/daredevil/textures/ui/",
-    "dlc/demonios/textures/ui/"
-  ],
-  "unarchived_files": [
-
-  ],
+  "map_prefixes": [],
+  "unarchived_files": [],
   "archive_paths": [
+    "${GAME_DIR}/archives_win64/",
+    "${GAME_DIR}/dlc_win64/cruiser/",
+    "${GAME_DIR}/dlc_win64/dvd_hoodornament/",
+    "${GAME_DIR}/dlc_win64/flamethrower/",
+    "${GAME_DIR}/dlc_win64/hot_dog_van/",
+    "${GAME_DIR}/dlc_win64/retail_hoodornament1/",
+    "${GAME_DIR}/dlc_win64/retail_hoodornament2/",
+    "${GAME_DIR}/dlc_win64/return_of_the_riders/",
+    "${GAME_DIR}/dlc_win64/ripper/",
+    "${GAME_DIR}/dlc_win64/roadwarrior_relics/",
+    "${GAME_DIR}/dlc_win64/rocket_truck/",
+    "${GAME_DIR}/dlc_win64/rockstar/",
+    "${GAME_DIR}/dlc_win64/rockstar_hoodornament1/",
+    "${GAME_DIR}/dlc_win64/rockstar_hoodornament2/",
+    "${GAME_DIR}/dlc_win64/rockstar_hoodornament3/",
+    "${GAME_DIR}/dlc_win64/storm_raiders/",
     "${GAME_DIR}/share/data/"
   ],
   "mdic_ftype": "mdi",
@@ -88,6 +84,8 @@
       ".cfx": "gfx",
       ".gfx": "gfx"
     }
+  ],
+  "final_queries": [
+    "UPDATE core_nodes SET v_path=('__ROOT__/' || COALESCE(file_type, 'none') || '/' || v_path) WHERE (v_path IS NOT NULL) AND (v_path NOT LIKE '%/%') AND (p_path IS NULL);"
   ]
-
 }

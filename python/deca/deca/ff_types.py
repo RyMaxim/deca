@@ -3,7 +3,11 @@ compression_v4_01_zlib = 0x01
 compression_v4_02_unknown = 0x02
 compression_v4_03_zstd = 0x03
 compression_v4_04_oo = 0x04
-compression_v3_zlib = 0xff
+compression_v3_zlib = 0xff # 2024.05.20... Deprecated! Can be safely removed.
+compression_v2_zlib = 0xee
+
+compression_flag_none = 0x00
+compression_flag_aaf = 0xff
 
 FTYPE_NOT_HANDLED = 'NOT'
 FTYPE_ARC = 'arc'

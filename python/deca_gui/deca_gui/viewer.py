@@ -1,5 +1,5 @@
 from deca.db_processor import VfsNode, VfsProcessor
-from PySide2.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget
 
 
 class DataViewer(QWidget):

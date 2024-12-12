@@ -5,28 +5,46 @@ from .file import ArchiveFile
 
 def tab_file_load(filename, ver):
     with ArchiveFile(open(filename, 'rb')) as f:
-        magic = f.read(4)
-        ver_0 = f.read_u16()
-        ver_1 = f.read_u16()
-        ver_2 = f.read_u32()
 
-        assert magic == b'TAB\x00'
-        if 3 == ver:
-            assert ver_0 == 2, f"ver_0 = {ver_0}"
-            assert ver_1 == 1, f"ver_1 = {ver_1}"
-            assert ver_2 in {2048, 4096}, f"ver_2 = {ver_2}"
-            tab_file = TabFileV3()
-        elif 4 == ver:
-            assert ver_0 == 2, f"ver_0 = {ver_0}"
-            assert ver_1 == 1, f"ver_1 = {ver_1}"
-            assert ver_2 == 4096, f"ver_2 = {ver_2}"
-            tab_file = TabFileV4()
-        elif 5 == ver:
-            assert ver_0 == 3, f"ver_0 = {ver_0}"
-            assert ver_1 == 1, f"ver_1 = {ver_1}"
-            assert ver_2 == 4096, f"ver_2 = {ver_2}"
-            tab_file = TabFileV5()
+        unknown_version = False
+
+        magic = f.read(4)
+
+        if magic == b'\x00\x08\x00\x00':
+            
+            if 2 == ver:
+                tab_file = TabFileV2()
+            else:
+                unknown_version = True
+
+        elif magic == b'TAB\x00':
+
+            ver_0 = f.read_u16()
+            ver_1 = f.read_u16()
+            ver_2 = f.read_u32()
+
+            if 3 == ver:
+                assert ver_0 == 2, f"ver_0 = {ver_0}"
+                assert ver_1 == 1, f"ver_1 = {ver_1}"
+                assert ver_2 in {2048, 4096}, f"ver_2 = {ver_2}"
+                tab_file = TabFileV3()
+            elif 4 == ver:
+                assert ver_0 == 2, f"ver_0 = {ver_0}"
+                assert ver_1 == 1, f"ver_1 = {ver_1}"
+                assert ver_2 == 4096, f"ver_2 = {ver_2}"
+                tab_file = TabFileV4()
+            elif 5 == ver:
+                assert ver_0 == 3, f"ver_0 = {ver_0}"
+                assert ver_1 == 1, f"ver_1 = {ver_1}"
+                assert ver_2 == 4096, f"ver_2 = {ver_2}"
+                tab_file = TabFileV5()
+            else:
+                unknown_version = True
+        
         else:
+            unknown_version = True
+            
+        if unknown_version == True:
             raise NotImplementedError('Unknown TAB file version {}'.format(ver))
 
     with ArchiveFile(open(filename, 'rb')) as f:
@@ -46,6 +64,47 @@ class TabFileBase:
 
     def deserialize(self, f):
         raise NotImplementedError('Interface Class')
+
+    def serialize(self, f):
+        raise NotImplementedError('Interface Class')
+
+
+class TabFileV2(TabFileBase):
+    def __init__(self):
+        TabFileBase.__init__(self)
+
+    def deserialize(self, f):
+        self.magic = f.read(4)
+       
+        chunked_files_table = {}
+        chunked_files_count = f.read_u32()
+        for i in range(chunked_files_count):
+            hashname = f.read_u32()
+            blocks = []
+            blocks_count = f.read_u32()
+            for k in range(blocks_count):
+                offset_u = f.read_u32()
+                offset_c = f.read_u32()
+                blocks.append([offset_c, offset_u])
+            chunked_files_table[hashname] = blocks
+
+        self.file_table = []
+        self.file_hash_map = {}
+        entry = TabEntryFileV2()
+        while entry.deserialize(f):
+            if entry.hashname in chunked_files_table:
+                entry.file_block_table = []
+                blocks = chunked_files_table[entry.hashname]
+                blocks.append([entry.size_c, entry.size_u])
+                for i in range(0, len(blocks) - 1):
+                    block_len_c = blocks[i+1][0] - blocks[i][0]
+                    block_len_u = blocks[i+1][1] - blocks[i][1]
+                    entry.file_block_table.append([block_len_c, block_len_u])
+            self.file_table.append(entry)
+            self.file_hash_map[entry.hashname] = entry
+            entry = TabEntryFileV2()
+
+        return True
 
     def serialize(self, f):
         raise NotImplementedError('Interface Class')
@@ -203,6 +262,32 @@ class TabEntryFileBase:
         ]
 
 
+class TabEntryFileV2(TabEntryFileBase):
+    def __init__(self):
+        TabEntryFileBase.__init__(self)
+
+    def deserialize(self, f):
+        try:
+            self.hashname = f.read_u32(raise_on_no_data=True)
+            self.offset = f.read_u32(raise_on_no_data=True)
+            self.size_c = f.read_u32(raise_on_no_data=True)
+            self.size_u = f.read_u32(raise_on_no_data=True)
+            if self.size_c == self.size_u:
+                self.compression_type = compression_00_none
+            else:
+                self.compression_type = compression_v2_zlib
+
+            if f.debug:
+                self.debug()
+        except EDecaOutOfData:
+            return False
+
+        return True
+
+    def serialize(self, f):
+        raise NotImplementedError('TODO')
+
+
 class TabEntryFileV3(TabEntryFileBase):
     def __init__(self):
         TabEntryFileBase.__init__(self)
@@ -213,11 +298,7 @@ class TabEntryFileV3(TabEntryFileBase):
             self.offset = f.read_u32(raise_on_no_data=True)
             self.size_c = f.read_u32(raise_on_no_data=True)
             self.size_u = self.size_c
-            self.compression_flags = 0
-            if self.size_c == self.size_u:
-                self.compression_type = compression_00_none
-            else:
-                self.compression_type = compression_v3_zlib
+            self.compression_type = compression_00_none
 
             if f.debug:
                 self.debug()
@@ -242,7 +323,7 @@ class TabEntryFileV4(TabEntryFileBase):
             self.size_u = f.read_u32(raise_on_no_data=True)
             self.file_block_index = f.read_u16(raise_on_no_data=True)
             self.compression_type = f.read_u8(raise_on_no_data=True)
-            self.compression_flags = f.read_u8(raise_on_no_data=True)
+            self.compression_flags = f.read_u8(raise_on_no_data=True) # can be ignored... 0 or 1... probably 1 for compressed ATX/AVTX textures...
 
             if f.debug:
                 print(self.debug())
@@ -267,7 +348,7 @@ class TabEntryFileV5(TabEntryFileBase):
             self.size_u = f.read_u32(raise_on_no_data=True)
             self.file_block_index = f.read_u16(raise_on_no_data=True)
             self.compression_type = f.read_u8(raise_on_no_data=True)
-            self.compression_flags = f.read_u8(raise_on_no_data=True)
+            self.compression_flags = f.read_u8(raise_on_no_data=True) # can be ignored... 0 or 1... probably 1 for compressed ATX/AVTX textures...
 
             if f.debug:
                 print(self.debug())
